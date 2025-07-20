@@ -1,21 +1,3 @@
-# The PI-CAI Challenge: Public Training and Development Dataset
-
-## Reference
-Please cite the following article, if you are using the PI-CAI: Public Training and Development Dataset:
-	
-	A. Saha, J. J. Twilt, J. S. Bosma, B. van Ginneken, D. Yakar, M. Elschot, J. Veltman, J. J. Fütterer, M. de Rooij, H. Huisman, "Artificial Intelligence and Radiologists at Prostate Cancer Detection in MRI: The PI-CAI Challenge (Study Protocol)", DOI: 10.5281/zenodo.6522364
-
-	@ARTICLE{PICAI_BIAS,
-      	author = {Anindo Saha, Jasper J. Twilt, Joeran S. Bosma, Bram van Ginneken, Derya Yakar, Mattijs Elschot, Jeroen Veltman, Jurgen Fütterer, Maarten de Rooij, Henkjan Huisman},
-      	title  = {{Artificial Intelligence and Radiologists at Prostate Cancer Detection in MRI: The PI-CAI Challenge}}, 
-      	year   = {2022},
-      	doi    = {10.5281/zenodo.6522364}
-    }
-
-
-## License
-[CC-BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)
-
 
 ## Dataset Characteristics
 This dataset contains 1500 anonymized prostate biparametric MRI scans from 1476 patients, acquired between 2012-2021, at three centers (Radboud University Medical Center, University Medical Center Groningen, Ziekenhuis Groep Twente) based in The Netherlands. 
