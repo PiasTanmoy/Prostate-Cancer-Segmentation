@@ -1,0 +1,19 @@
+# Ignore everything
+*
+
+# But do not ignore .gitignore itself
+!.gitignore
+
+# Allow Python files
+!*.py
+
+# Allow Jupyter notebooks
+!*.ipynb
+
+!*.md
+
+
+# Optionally allow folders (so Python/Notebook files inside them are tracked)
+!*/
+
+input/
