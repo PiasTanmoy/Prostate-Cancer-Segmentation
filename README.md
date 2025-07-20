@@ -62,16 +62,3 @@ images  (root folder with all patients, and in turn, all 1500 studies)
 
 ## Annotations for Dataset
 See [https://github.com/DIAGNijmegen/picai_labels](https://github.com/DIAGNijmegen/picai_labels).
-
-
-## Managed By
-Diagnostic Image Analysis Group,
-Radboud University Medical Center,
-Nijmegen, The Netherlands
-
-## Contact Information
-- Anindo Saha: Anindya.Shaha@radboudumc.nl
-- Jasper Twilt: Jasper.Twilt@radboudumc.nl
-- Joeran Bosma: Joeran.Bosma@radboudumc.nl
-- Henkjan Huisman: Henkjan.Huisman@radboudumc.nl
-# Prostate-Cancer-Segmentation
