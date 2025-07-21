@@ -277,7 +277,7 @@ def generate_pseudo_labels(unlabeled_ids, base_dir, out_dir, model, device, imag
                     image_slice_np = np.stack([np.take(vol, slice_idx, axis=slice_axis) for vol in modalities], axis=-1) # Extracts the corresponding 2D slice from each modality and stacks them into a 3-channel image.
                     eval_transform.dataset = [(image_slice_np, np.zeros_like(image_slice_np[...,0]))] # Sets the wrapper’s dataset to the current slice (mask is a dummy, not used).
                     image_tensor, _ = eval_transform[0] # Applies the evaluation transform to get the image tensor. Applies resizing and normalization.
-                    image_tensor = image_tensor.unsqueeze(0).to(device)
+                    image_tensor = image_tensor.unsqueeze(0).to(device) # Adds a batch dimension and moves the tensor to the correct device.
 
                     with torch.amp.autocast(device_type=device.split(':')[0], enabled=(device=="cuda")):
                         pred_logits = model(image_tensor) 
