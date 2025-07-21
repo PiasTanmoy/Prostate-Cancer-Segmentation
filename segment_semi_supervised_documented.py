@@ -129,8 +129,10 @@ class SemiSupPiCaiDataset(Dataset):
         self.sample_ids = sample_ids # List of sample IDs to load
         self.mask_dir = mask_dir # Directory containing masks
         self.slice_infos = [] # List to store (sample_idx, slice_idx) tuples for each slice
+        
         if not self.sample_ids: return # If no sample IDs provided, return empty dataset
         first_mask_path = os.path.join(mask_dir, f'{self.sample_ids[0]}.npy') # Path to the first mask file
+        
         if not os.path.exists(first_mask_path): # If the first mask file does not exist, try to find any existing mask
             for s_id in self.sample_ids: # Iterate through sample IDs to find an existing mask
                 potential_path = os.path.join(mask_dir, f'{s_id}.npy') # Path to potential mask file
@@ -139,78 +141,109 @@ class SemiSupPiCaiDataset(Dataset):
                     break
             else:
                 return
+            
         data_shape = np.load(first_mask_path).shape # Load shape of the first mask to determine slice axis
         self.slice_axis = np.argmin(data_shape) # Determine the slice axis based on the smallest dimension
         desc = "Finding validation slices" if is_validation else "Finding training slices" 
+
         for sample_idx, sample_id in enumerate(tqdm(self.sample_ids, desc=desc)): # Iterate through sample IDs to find slices
+            
             mask_path = os.path.join(self.mask_dir, f'{sample_id}.npy') # Path to the mask file for the current sample
-            if not os.path.exists(mask_path):
-                continue
-            mask_3d = np.load(mask_path)
-            num_slices = mask_3d.shape[self.slice_axis]
+            
+            if not os.path.exists(mask_path): continue # If the mask file does not exist, skip this sample
+            
+            mask_3d = np.load(mask_path) # Load the 3D mask for the current sample
+            num_slices = mask_3d.shape[self.slice_axis] # Get the number of slices along the slice axis
+            
             if is_validation:
                 for slice_idx in range(num_slices):
-                    self.slice_infos.append((sample_idx, slice_idx))
+                    self.slice_infos.append((sample_idx, slice_idx)) # sample_idx is the index of the sample, slice_idx is the index of the slice
             else:
-                pos_slices = [i for i in range(num_slices) if np.sum(np.take(mask_3d, i, self.slice_axis) >= 1) > 0]
-                neg_slices = [i for i in range(num_slices) if np.sum(np.take(mask_3d, i, self.slice_axis) >= 1) == 0]
-                num_pos = len(pos_slices)
-                for slice_idx in pos_slices: self.slice_infos.append((sample_idx, slice_idx))
+                # For training, we sample positive and negative slices
+                pos_slices = [i for i in range(num_slices) if np.sum(np.take(mask_3d, i, self.slice_axis) >= 1) > 0] # Get positive slices where mask (pixel sum not 0) is present
+                neg_slices = [i for i in range(num_slices) if np.sum(np.take(mask_3d, i, self.slice_axis) >= 1) == 0] # Get negative slices where mask (pixel all 0) is absent
+                
+                num_pos = len(pos_slices) # Number of positive slices
+                for slice_idx in pos_slices: 
+                    self.slice_infos.append((sample_idx, slice_idx)) # Append positive slices to slice_infos
+                
                 if neg_slices:
-                    neg_samples = random.sample(neg_slices, min(num_pos, len(neg_slices)))
-                    for slice_idx in neg_samples: self.slice_infos.append((sample_idx, slice_idx))
-        random.shuffle(self.slice_infos)
+                    neg_samples = random.sample(neg_slices, min(num_pos, len(neg_slices))) # Randomly sample negative slices, ensuring we have the same number as positive slices
+                    for slice_idx in neg_samples: 
+                        self.slice_infos.append((sample_idx, slice_idx))
+
+        random.shuffle(self.slice_infos) # Shuffle the slice infos to randomize the order of slices
+
     def __len__(self):
-        return len(self.slice_infos)
+        return len(self.slice_infos) # Return the number of slices in the dataset
+    
     def __getitem__(self, idx):
-        sample_idx, slice_idx = self.slice_infos[idx]
-        sample_id = self.sample_ids[sample_idx]
-        modalities = [np.load(os.path.join(self.base_dir, m, f'{sample_id}.npy')) for m in ['t2w', 'adc', 'hbv']]
-        img_3d = np.stack(modalities, axis=-1)
-        mask_path = os.path.join(self.mask_dir, f'{sample_id}.npy')
-        mask_3d = np.load(mask_path)
-        image_slice = np.take(img_3d, slice_idx, axis=self.slice_axis)
-        mask_slice = np.take(mask_3d, slice_idx, axis=self.slice_axis)
-        mask_slice = mask_slice.astype(np.int64)
-        return image_slice, mask_slice
+        sample_idx, slice_idx = self.slice_infos[idx] # Get the sample index and slice index for the given idx
+        sample_id = self.sample_ids[sample_idx] # Get the ORIGINAL sample ID corresponding to the sample index
+        modalities = [np.load(os.path.join(self.base_dir, m, f'{sample_id}.npy')) for m in ['t2w', 'adc', 'hbv']] # Load modalities for the sample
+        img_3d = np.stack(modalities, axis=-1) # Combines the three 3D modality arrays into a single 4D array, with the last dimension representing the modality channel.
+        mask_path = os.path.join(self.mask_dir, f'{sample_id}.npy') # Path to the mask file for the sample
+        mask_3d = np.load(mask_path) # Load the 3D mask for the sample
+        image_slice = np.take(img_3d, slice_idx, axis=self.slice_axis) # Extract the slice from the 3D image for all 3 channels
+        mask_slice = np.take(mask_3d, slice_idx, axis=self.slice_axis) # Extract the corresponding mask slice
+        mask_slice = mask_slice.astype(np.int64) # Ensures the mask is in the correct integer format for PyTorch. 
+        return image_slice, mask_slice # Returns the 2D image slice (with all modalities as channels) and its corresponding mask slice.
+
+
 
 class AugmentationWrapper(Dataset):
+    """
+    Wrapper for applying augmentations to the dataset.
+    """
+
     def __init__(self, dataset, transform=None):
         self.dataset = dataset
         self.transform = transform
+    
     def __len__(self):
         return len(self.dataset)
+    
     def __getitem__(self, idx):
-        image_np, mask_np = self.dataset[idx]
+        image_np, mask_np = self.dataset[idx] # Load the image and mask from the dataset
+
         if self.transform:
             augmented = self.transform(image=image_np.astype(np.float32), mask=mask_np)
             image_np, mask_np = augmented['image'], augmented['mask']
-        for i in range(image_np.shape[2]):
-            channel = image_np[:, :, i]
-            non_zero = channel[channel > 1e-6]
+
+        for i in range(image_np.shape[2]): # Iterate over each channel in the image which is 3
+            channel = image_np[:, :, i] # Extract the 2D channel.
+            non_zero = channel[channel > 1e-6] # Find all non-zero pixels (to avoid background).
             if non_zero.size > 0:
                 p1, p99 = np.percentile(non_zero, 1), np.percentile(non_zero, 99)
-                channel = np.clip(channel, p1, p99)
-            min_val, max_val = channel.min(), channel.max()
-            image_np[:, :, i] = (channel - min_val) / (max_val - min_val) if max_val > min_val else 0
-        image = torch.from_numpy(image_np.transpose(2, 0, 1)).float()
-        mask = torch.from_numpy(mask_np).long()
+                channel = np.clip(channel, p1, p99) # Clip all values in the channel to be within [p1, p99]. This reduces the effect of extreme outliers, making the normalization more robust.
+
+            min_val, max_val = channel.min(), channel.max() 
+            image_np[:, :, i] = (channel - min_val) / (max_val - min_val) if max_val > min_val else 0 # Normalize the channel to [0, 1] range. If max_val equals min_val, set the channel to 0 to avoid division by zero.
+
+        image = torch.from_numpy(image_np.transpose(2, 0, 1)).float() # Convert the image to a PyTorch tensor, changing the shape from (H, W, C) to (C, H, W), and cast to float.
+        mask = torch.from_numpy(mask_np).long() # Convert the mask to a PyTorch tensor and cast to long type for segmentation tasks.
+
         return image, mask
 
 
 def train_fn(loader, model, loss_fn, optimizer, scaler, device):
+    """
+    Training function for the model.
+    """
     model.train()
     loop = tqdm(loader, desc="Training")
     for data, targets in loop:
         data, targets = data.to(device), targets.to(device)
-        with torch.amp.autocast(device_type=device.split(':')[0], enabled=(device=="cuda")):
+
+        with torch.amp.autocast(device_type=device.split(':')[0], enabled=(device=="cuda")): # Enable mixed precision training if using CUDA
             predictions = model(data)
             loss = loss_fn(predictions, targets)
-        optimizer.zero_grad()
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
-        loop.set_postfix(loss=loss.item())
+
+        optimizer.zero_grad() # Zero the gradients before backpropagation
+        scaler.scale(loss).backward() # Scale the loss for mixed precision
+        scaler.step(optimizer) # Update the model parameters
+        scaler.update() # Update the scaler for the next iteration
+        loop.set_postfix(loss=loss.item()) # Update the progress bar with the current loss
 
 def check_accuracy(loader, model, device, num_classes=6):
     model.eval()
@@ -229,48 +262,57 @@ def check_accuracy(loader, model, device, num_classes=6):
 def generate_pseudo_labels(unlabeled_ids, base_dir, out_dir, model, device, image_size, num_classes, min_lesion_area):
     model.eval()
     eval_transform = AugmentationWrapper(dataset=None, transform=A.Compose([A.Resize(height=image_size, width=image_size)]))
+    
     with torch.no_grad():
         for patient_id in tqdm(unlabeled_ids, desc="Generating Pseudo-Masks"):
             try:
                 ref_vol_path = os.path.join(base_dir, 't2w', f'{patient_id}.npy')
                 if not os.path.exists(ref_vol_path): continue
-                ref_vol = np.load(ref_vol_path)
-                slice_axis = np.argmin(ref_vol.shape)
-                pred_volume = np.zeros_like(ref_vol, dtype=np.uint8)
-                for slice_idx in range(ref_vol.shape[slice_axis]):
-                    modalities = [np.load(os.path.join(base_dir, m, f'{patient_id}.npy')) for m in ['t2w', 'adc', 'hbv']]
-                    image_slice_np = np.stack([np.take(vol, slice_idx, axis=slice_axis) for vol in modalities], axis=-1)
-                    eval_transform.dataset = [(image_slice_np, np.zeros_like(image_slice_np[...,0]))]
-                    image_tensor, _ = eval_transform[0]
+                ref_vol = np.load(ref_vol_path) # Load the reference volume (T2-weighted image)
+                slice_axis = np.argmin(ref_vol.shape) # Determine the slice axis based on the smallest dimension
+                pred_volume = np.zeros_like(ref_vol, dtype=np.uint8) # Prepares an empty array to store the predicted mask for each slice
+                
+                for slice_idx in range(ref_vol.shape[slice_axis]): # Loops through every 2D slice along the chosen axis.
+                    modalities = [np.load(os.path.join(base_dir, m, f'{patient_id}.npy')) for m in ['t2w', 'adc', 'hbv']] # Loads the three MRI modalities (t2w, adc, hbv) for the patient.
+                    image_slice_np = np.stack([np.take(vol, slice_idx, axis=slice_axis) for vol in modalities], axis=-1) # Extracts the corresponding 2D slice from each modality and stacks them into a 3-channel image.
+                    eval_transform.dataset = [(image_slice_np, np.zeros_like(image_slice_np[...,0]))] # Sets the wrapper’s dataset to the current slice (mask is a dummy, not used).
+                    image_tensor, _ = eval_transform[0] # Applies the evaluation transform to get the image tensor. Applies resizing and normalization.
                     image_tensor = image_tensor.unsqueeze(0).to(device)
+
                     with torch.amp.autocast(device_type=device.split(':')[0], enabled=(device=="cuda")):
-                        pred_logits = model(image_tensor)
-                        pred_class = torch.argmax(torch.softmax(pred_logits, dim=1), dim=1).squeeze().cpu().numpy().astype(np.uint8)
+                        pred_logits = model(image_tensor) 
+                        pred_class = torch.argmax(torch.softmax(pred_logits, dim=1), dim=1).squeeze().cpu().numpy().astype(np.uint8) # Gets the predicted class for each pixel in the slice by applying softmax and argmax.
+                    
                     original_dims = (ref_vol.shape[1], ref_vol.shape[2])
-                    resizer = A.Resize(height=original_dims[0], width=original_dims[1], interpolation=0)
-                    pred_resized = resizer(image=pred_class)['image']
+                    resizer = A.Resize(height=original_dims[0], width=original_dims[1], interpolation=0) 
+                    pred_resized = resizer(image=pred_class)['image']# Resizes the predicted mask back to the original slice dimensions.
+
                     pred_processed = remove_small_lesions_multiclass(pred_resized, min_lesion_area, num_classes)
-                    slicer = [slice(None)] * pred_volume.ndim
-                    slicer[slice_axis] = slice_idx
-                    pred_volume[tuple(slicer)] = pred_processed
-                np.save(os.path.join(out_dir, f"{patient_id}.npy"), pred_volume)
+                    slicer = [slice(None)] * pred_volume.ndim # Creates a slicer for the 3D volume.
+                    slicer[slice_axis] = slice_idx # Sets the slice index for the current slice.
+                    pred_volume[tuple(slicer)] = pred_processed # Assigns the processed mask back to the corresponding slice in the 3D volume.
+
+                np.save(os.path.join(out_dir, f"{patient_id}.npy"), pred_volume) # Saves the full 3D pseudo-labeled mask for the patient.
+
             except Exception as e:
                 print(f"Warning: Could not pseudo-label patient {patient_id}. Error: {e}")
+
     model.train()
 
 
 def remove_small_lesions_multiclass(mask_np, min_size, num_classes):
-    out = np.copy(mask_np)
+    out = np.copy(mask_np) # predicted mask
     for c in range(1, num_classes):
         binary = (mask_np == c).astype(np.uint8)
-        labeled_array, num_features = ndi.label(binary)
-        if num_features == 0:
+        labeled_array, num_features = ndi.label(binary) # labeled_array assigns a unique integer to each connected region, num_features is the number of connected regions found.
+        if num_features == 0: # If there are no regions for this class, skip to the next class.
             continue
-        component_sizes = np.bincount(labeled_array.ravel())
-        large_enough = component_sizes > min_size
-        large_enough[0] = False
-        keep = large_enough[labeled_array]
-        out[(binary == 1) & (~keep)] = 0
+        component_sizes = np.bincount(labeled_array.ravel()) # Counts the number of pixels in each connected component (region).
+        large_enough = component_sizes > min_size  # Creates a boolean array indicating which components are larger than the minimum size.
+        large_enough[0] = False # Ensures the background label (0) is not considered a valid region.
+        keep = large_enough[labeled_array] # Creates a mask of the same shape as the image, True where the region is large enough, False otherwise.
+        out[(binary == 1) & (~keep)] = 0 # Sets pixels belonging to small regions (not "keep") back to 0 (background) in the output mask.
+
     return out
 
 
@@ -288,30 +330,36 @@ print("\n--- Data Preparation ---")
 
 # ORIGINAL_DATA_DIR = input/processed_resampled3
 # Lists all mask files in the labeled data directory, strips the .npy extension, and sorts the IDs.
+# This is just to extract the IDs of the labeled data.
 all_original_ids = sorted([f.replace('.npy', '') for f in os.listdir(os.path.join(ORIGINAL_DATA_DIR, 'mask')) if f.endswith('.npy')])
 
 random.seed(42)
 random.shuffle(all_original_ids)
 
+# train 0.8 and validation 0.2 split
 split_idx = int(len(all_original_ids) * (1 - VALIDATION_SPLIT))
 original_train_ids, val_ids = all_original_ids[:split_idx], all_original_ids[split_idx:]
 print(f"Labeled Data Split: {len(original_train_ids)} training, {len(val_ids)} validation patients.")
 
+# IMAGE_SIZE = 384
 train_transform = A.Compose([
-    A.Resize(height=IMAGE_SIZE, width=IMAGE_SIZE), A.Rotate(limit=15, p=0.5),
-    A.HorizontalFlip(p=0.5), A.VerticalFlip(p=0.1),
-    A.RandomBrightnessContrast(p=0.3), A.GaussNoise(p=0.2)
+    A.Resize(height=IMAGE_SIZE, width=IMAGE_SIZE),  # Resize images to fixed size
+    A.Rotate(limit=15, p=0.5), # Random rotation within 15 degrees
+    A.HorizontalFlip(p=0.5), # Random horizontal flip
+    A.VerticalFlip(p=0.1), # Random vertical flip
+    A.RandomBrightnessContrast(p=0.3), # Random brightness and contrast adjustment
+    A.GaussNoise(p=0.2) # Random Gaussian noise
 ])
 
 val_transform = A.Compose([A.Resize(height=IMAGE_SIZE, width=IMAGE_SIZE)])
 
+# Create datasets for training and validation
 train_base_s1 = SemiSupPiCaiDataset(ORIGINAL_DATA_DIR, original_train_ids, mask_dir=os.path.join(ORIGINAL_DATA_DIR, 'mask'))
-val_base_s1 = SemiSupPiCaiDataset(ORIGINAL_DATA_DIR, val_ids, mask_dir=os.path.join(ORIGINAL_DATA_DIR, 'mask'), is_validation=True)
-
 train_dataset_s1 = AugmentationWrapper(train_base_s1, transform=train_transform)
-val_dataset_s1 = AugmentationWrapper(val_base_s1, transform=val_transform)
-
 train_loader_s1 = DataLoader(train_dataset_s1, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY)
+
+val_base_s1 = SemiSupPiCaiDataset(ORIGINAL_DATA_DIR, val_ids, mask_dir=os.path.join(ORIGINAL_DATA_DIR, 'mask'), is_validation=True)
+val_dataset_s1 = AugmentationWrapper(val_base_s1, transform=val_transform)
 
 val_base_s1_balanced = SemiSupPiCaiDataset(ORIGINAL_DATA_DIR, val_ids, mask_dir=os.path.join(ORIGINAL_DATA_DIR, 'mask'), is_validation=False)
 val_dataset_s1_balanced = AugmentationWrapper(val_base_s1_balanced, transform=val_transform)
@@ -354,6 +402,7 @@ def pred_segment():
     # --- Pseudo-Label Generation ---
     print("\n--- Generating Pseudo-Labels for Stage 2 ---")
     model.load_state_dict(torch.load(STAGE_1_MODEL_SAVE_PATH))
+    # UNLABELED_DATA_DIR = "input/processed_incomplete_cases" 
     unlabeled_ids = sorted([f.replace('.npy', '') for f in os.listdir(os.path.join(UNLABELED_DATA_DIR, 't2w'))])
     generate_pseudo_labels(unlabeled_ids, UNLABELED_DATA_DIR, PSEUDO_MASK_DIR, model, DEVICE, IMAGE_SIZE, NUM_CLASSES, MIN_LESION_AREA)
 
