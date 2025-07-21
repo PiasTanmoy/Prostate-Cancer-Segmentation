@@ -258,6 +258,7 @@ def generate_pseudo_labels(unlabeled_ids, base_dir, out_dir, model, device, imag
                 print(f"Warning: Could not pseudo-label patient {patient_id}. Error: {e}")
     model.train()
 
+
 def remove_small_lesions_multiclass(mask_np, min_size, num_classes):
     out = np.copy(mask_np)
     for c in range(1, num_classes):
@@ -284,8 +285,14 @@ best_val_dice = -1.0
 
 # --- Data Preparation ---
 print("\n--- Data Preparation ---")
+
+# ORIGINAL_DATA_DIR = input/processed_resampled3
+# Lists all mask files in the labeled data directory, strips the .npy extension, and sorts the IDs.
 all_original_ids = sorted([f.replace('.npy', '') for f in os.listdir(os.path.join(ORIGINAL_DATA_DIR, 'mask')) if f.endswith('.npy')])
-random.seed(42); random.shuffle(all_original_ids)
+
+random.seed(42)
+random.shuffle(all_original_ids)
+
 split_idx = int(len(all_original_ids) * (1 - VALIDATION_SPLIT))
 original_train_ids, val_ids = all_original_ids[:split_idx], all_original_ids[split_idx:]
 print(f"Labeled Data Split: {len(original_train_ids)} training, {len(val_ids)} validation patients.")
@@ -295,6 +302,7 @@ train_transform = A.Compose([
     A.HorizontalFlip(p=0.5), A.VerticalFlip(p=0.1),
     A.RandomBrightnessContrast(p=0.3), A.GaussNoise(p=0.2)
 ])
+
 val_transform = A.Compose([A.Resize(height=IMAGE_SIZE, width=IMAGE_SIZE)])
 
 train_base_s1 = SemiSupPiCaiDataset(ORIGINAL_DATA_DIR, original_train_ids, mask_dir=os.path.join(ORIGINAL_DATA_DIR, 'mask'))
@@ -304,6 +312,7 @@ train_dataset_s1 = AugmentationWrapper(train_base_s1, transform=train_transform)
 val_dataset_s1 = AugmentationWrapper(val_base_s1, transform=val_transform)
 
 train_loader_s1 = DataLoader(train_dataset_s1, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY)
+
 val_base_s1_balanced = SemiSupPiCaiDataset(ORIGINAL_DATA_DIR, val_ids, mask_dir=os.path.join(ORIGINAL_DATA_DIR, 'mask'), is_validation=False)
 val_dataset_s1_balanced = AugmentationWrapper(val_base_s1_balanced, transform=val_transform)
 val_loader_s1_balanced = DataLoader(val_dataset_s1_balanced, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY)
@@ -312,15 +321,19 @@ val_loader_s1_balanced = DataLoader(val_dataset_s1_balanced, batch_size=BATCH_SI
 def TRAIN():
     # --- STAGE 1: Supervised Training ---
     print("\n--- STAGE 1: Starting Supervised Training ---")
-    best_val_dice = -1.0
-    patience = 10
-    patience_counter = 0
-    for epoch in range(NUM_EPOCHS_STAGE_1):
+    best_val_dice = -1.0 # Initialize best validation Dice score
+    patience = 10 # Number of epochs to wait for improvement before early stopping
+    patience_counter = 0 # Counter for early stopping patience
+    
+    for epoch in range(NUM_EPOCHS_STAGE_1): # Loop through epochs
         print(f"\n--- Stage 1, Epoch {epoch+1}/{NUM_EPOCHS_STAGE_1} ---")
+
         train_fn(train_loader_s1, model, loss_fn, optimizer, scaler, DEVICE)
+
         multiclass_dice, binary_dice = check_accuracy(val_loader_s1_balanced, model, DEVICE, num_classes=NUM_CLASSES)
         print(f"Validation Multiclass Dice: {multiclass_dice:.4f}")
         print(f"Validation Binary Dice: {binary_dice:.4f}")
+
         if multiclass_dice > best_val_dice:
             best_val_dice = multiclass_dice
             torch.save(model.state_dict(), STAGE_1_MODEL_SAVE_PATH)
