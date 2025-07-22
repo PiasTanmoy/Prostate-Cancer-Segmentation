@@ -2,6 +2,9 @@
 # Semi-supervised Multi-modal Multi-class Segmentation of Prostate Cancer in MRI using DeepLabV3+ (Google)
 ## Code: segmentation_pi_cai_project - multi-class.ipynb
 
+![MRI Example](3D prediction.png)
+![MRI Example](2D prediction.png)
+
 ## Data Processing
 
 We used the **PI-CAI** dataset in this study. Since our main goal was to segment cancerous lesions, we only included the images that actually contain cancer. To find these images, we examined the metadata and selected the cases where the label `"csPCa"` is marked as `"YES"`. A case is labeled `"csPCa = YES"` only when the clinical significance score (csIUP) is 2 or higher.
@@ -144,6 +147,52 @@ Abbreviations:
 - P: Philips Medical Systems
 - PCa: prostate cancer
 - csPCa: clinically significant prostate cancer
+
+## Hyperparamters
+| **Parameter**           | **Value**              | **Description**                                      |
+|-------------------------|------------------------|------------------------------------------------------|
+| DEVICE                  | "cuda"/"cpu"           | Use GPU if available, else CPU                      |
+| IMAGE_SIZE              | 384                    | Image size for resizing (height and width)          |
+| BATCH_SIZE              | 8                      | Batch size for training                             |
+| LEARNING_RATE_S1        | 1e-4                   | Learning rate for Stage 1 (supervised training)     |
+| LEARNING_RATE_S2        | 5e-5                   | Learning rate for Stage 2 (semi-supervised training)|
+| NUM_EPOCHS_STAGE_1      | 50                     | Number of epochs for Stage 1                        |
+| NUM_EPOCHS_STAGE_2      | 50                     | Number of epochs for Stage 2                        |
+| VALIDATION_SPLIT        | 0.2                    | Fraction of data used for validation                |
+| MIN_LESION_AREA         | 50                     | Minimum lesion area for post-processing             |
+| NUM_CLASSES             | 6                      | Number of segmentation classes                      |
+
+| **Parameter / Info**        | **Value / Description**                                                                 |
+|----------------------------|------------------------------------------------------------------------------------------|
+| Device                     | "cuda" if available, else "cpu"                                                         |
+| Image Size                 | 384 (images resized to 384x384)                                                         |
+| Batch Size                 | [4, 8, 16]                                                                               |
+| Learning Rate (Stage 1)    | 1e-4 (supervised training)                                                              |
+| Learning Rate (Stage 2)    | 5e-5 (semi-supervised training)                                                         |
+| Epochs (Stage 1)           | 50                                                                                      |
+| Epochs (Stage 2)           | 50                                                                                      |
+| Num Workers                | 0 (for DataLoader)                                                                      |
+| Pin Memory                 | True (for DataLoader)                                                                   |
+| Validation Split           | 0.2 (20% for validation)                                                                |
+| Min Lesion Area            | 50 (for post-processing)                                                                |
+| Num Classes                | 6 (multi-class segmentation)                                                            |
+| Model                      | DeepLabV3+ (ResNet-101 backbone, output channels = 6)                                   |
+| Modalities                 | T2W, ADC, HBV (multi-modal input, stacked as channels)                                  |
+| Augmentation               | Resize, rotation (±15°), horizontal/vertical flip, brightness/contrast, Gaussian noise  |
+| Normalization              | Per-channel percentile clipping (1st–99th), then min-max normalization to [0, 1]        |
+| Loss Function              | CrossEntropyLoss                                                                        |
+| Optimizer                  | Adam                                                                                    |
+| Early Stopping             | Patience = 10 epochs without improvement                                                |
+| Labeled Data Dir           | `input/processed_resampled3`                                                            |
+| Unlabeled Data Dir         | `input/processed_incomplete_cases`                                                      |
+| Output Dir                 | `models/semisupervised_output/multi_class_trial4`                                       |
+| Pseudo-mask Dir            | `<output_dir>/pseudo_masks`                                                             |
+| Stage 1 Model Path         | `<output_dir>/best_supervised_model.pth`                                                |
+| Final Model Path           | `<output_dir>/best_semisupervised_model.pth`                                            |
+| Pseudo-labeling            | Generates pseudo-masks for unlabeled data using best Stage 1 model                      |
+| Training Pipeline          | Stage 1: supervised → pseudo-label generation → Stage 2: semi-supervised                |
+| Post-processing            | Removes small lesions below MIN_LESION_AREA for each class                              |
+| Validation Loader          | Balanced (equal positive/negative slices) for fair evaluation                           |
 
 ## Imaging Files
 
