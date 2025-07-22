@@ -3,6 +3,9 @@
 ## Code: segmentation_pi_cai_project - multi-class.ipynb
 
 ![MRI Example](3D_prediction.png)
+
+
+
 ![MRI Example](2D_prediction.png)
 
 ## Data Processing
