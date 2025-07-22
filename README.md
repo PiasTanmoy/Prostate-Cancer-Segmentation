@@ -2,8 +2,8 @@
 # Semi-supervised Multi-modal Multi-class Segmentation of Prostate Cancer in MRI using DeepLabV3+ (Google)
 ## Code: segmentation_pi_cai_project - multi-class.ipynb
 
-![MRI Example](3D prediction.png)
-![MRI Example](2D prediction.png)
+![MRI Example](3D_prediction.png)
+![MRI Example](2D_prediction.png)
 
 ## Data Processing
 
